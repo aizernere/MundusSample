@@ -26,7 +26,8 @@ public class MyGdxGame extends ApplicationAdapter {
 	private FirstPersonCameraController controller;
 	private Array<Decal> mapDecals = new Array<>();
 	private DecalBatch decalBatch;
-
+	private boolean isJumping;
+	private float totalTime = 0;
 
 	@Override
 	public void create () {
@@ -53,42 +54,72 @@ public class MyGdxGame extends ApplicationAdapter {
 
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 		Terrain terrain = mundus.getAssetManager().getTerrainAssets().get(0).getTerrain();
+
 		float height = terrain.getHeightAtWorldCoord(scene.cam.position.x,scene.cam.position.z, new Matrix4());
-		scene.cam.position.y = height;
+
 		controller.update();
 		scene.sceneGraph.update();
 		scene.render();
 		for (Decal decal : mapDecals) {
 			decalBatch.add(decal);
-			double distance;
-			double maxDistance=700;
-			Vector3 playerPos = scene.cam.position;
-			Vector3 decalPos = decal.getPosition();
-			distance = Math.sqrt(
-							Math.pow(playerPos.x-decalPos.x,2) +
-							Math.pow(playerPos.y-decalPos.y,2) +
-							Math.pow(playerPos.z-decalPos.z,2));
-			// Calculate blackness factor
-			double blackness = distance / maxDistance;
-			blackness = Math.max(0, Math.min(blackness, 1)); // Clamp blackness between 0 and 1
-			float darkness= (float) (0.75- blackness);
-			if(darkness<0){
-				darkness = 0;
-			}
-			float r = darkness;
-			float g = darkness;
-			float b = darkness;
-			float a = 1.0f; // Keep alpha constant
-			Color color = new Color(r, g, b, a);
+			Color color = getColor(decal);
 			decal.setColor(color);
 		}
 
 		for (Decal decal : mapDecals) {
 			DecalHelper.faceCameraPerpendicularToGround(decal, scene.cam);
 		}
+		float time = Gdx.graphics.getDeltaTime();
+
+
+
+		if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+			isJumping = true;
+		}
+
+		if(isJumping){
+			totalTime += time;
+			if(totalTime >=1){
+				isJumping = false;
+				totalTime = 0;
+			}else{
+				scene.cam.position.y = (float) (-(1f/2f)*(9.81f)*Math.pow(totalTime-0.5f,2f)+1f)*10f+height;
+//				if(totalTime >=0.9&&scene.cam.position.y<height){
+//					isJumping = false;
+//					totalTime = 0;
+//				}
+			}
+		}else{
+			scene.cam.position.y = height;
+		}
+
 
 
 		decalBatch.flush();
+	}
+
+	private Color getColor(Decal decal) {
+		double distance;
+		double maxDistance=700;
+		Vector3 playerPos = scene.cam.position;
+		Vector3 decalPos = decal.getPosition();
+		distance = Math.sqrt(
+						Math.pow(playerPos.x-decalPos.x,2) +
+						Math.pow(playerPos.y-decalPos.y,2) +
+						Math.pow(playerPos.z-decalPos.z,2));
+		// Calculate blackness factor
+		double blackness = distance / maxDistance;
+		blackness = Math.max(0, Math.min(blackness, 1)); // Clamp blackness between 0 and 1
+		float darkness= (float) (0.5 - blackness);
+		if(darkness<0.05){
+			darkness = 0.05f;
+		}
+		float r = darkness;
+		float g = darkness;
+		float b = darkness;
+		float a = 1.0f; // Keep alpha constant
+		Color color = new Color(r, g, b, a);
+		return color;
 	}
 
 	@Override

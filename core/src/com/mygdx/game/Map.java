@@ -22,7 +22,7 @@ public class Map {
         for(int i=0;i<50;i++){
             randomX = random.nextInt(500) + 1;
             randomZ = random.nextInt(500) + 1;
-            height = terrain.getHeightAtWorldCoord(randomX, randomZ,new Matrix4())+27f;
+            height = terrain.getHeightAtWorldCoord(randomX, randomZ,new Matrix4())+32f;
             decal = Decal.newDecal(100, 120, ground,true);
             decal.setPosition(randomX,height,randomZ);
             mapDecals.add(decal);
