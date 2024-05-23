@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g3d.decals.CameraGroupStrategy;
 import com.badlogic.gdx.graphics.g3d.decals.Decal;
 import com.badlogic.gdx.graphics.g3d.decals.DecalBatch;
@@ -15,9 +16,17 @@ import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryonet.Client;
+import com.esotericsoftware.kryonet.Connection;
+import com.esotericsoftware.kryonet.Listener;
 import com.mbrlabs.mundus.commons.Scene;
 import com.mbrlabs.mundus.commons.terrain.Terrain;
 import com.mbrlabs.mundus.runtime.Mundus;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MyGdxGame extends ApplicationAdapter {
 	private Mundus mundus;
@@ -25,27 +34,85 @@ public class MyGdxGame extends ApplicationAdapter {
 
 	private FirstPersonCameraController controller;
 	private Array<Decal> mapDecals = new Array<>();
+
+	//players
+	private List<PlayerPosition> otherPlayerPositions;
+	private PlayerPosition myPosition;
+
+
+
 	private DecalBatch decalBatch;
+
+	private Decal astronaut;
 	private boolean isJumping;
 	private float totalTime = 0;
 
+	//server
+	private Client client;
+
+
+	public MyGdxGame(int id, float x, float z) {
+		this.myPosition = new PlayerPosition(id,x,z);
+	}
+
 	@Override
 	public void create () {
+		otherPlayerPositions = new ArrayList<>();
 		mundus = new Mundus(Gdx.files.internal("mundus"));
 		scene = mundus.loadScene("Main Scene.mundus");
+		client = new Client();
+		client.start();
 
-		scene.cam.position.set(230, 150, 190);
-		scene.cam.direction.rotate(Vector3.Y, 70);
-		scene.cam.direction.rotate(Vector3.Z, -20);
+		Kryo kryo = client.getKryo();
+		kryo.register(PlayerPosition.class);
+
+		try {
+			client.connect(5000, "localhost", 54555, 54777);
+		} catch (IOException e) {
+			Gdx.app.log("GameClient", "Unable to connect to server: " + e.getMessage());
+			Gdx.app.exit();
+		}
+		scene.cam.position.set(myPosition.x, 150, myPosition.z);
+
+		TextureRegion region = new TextureRegion(new Texture(Gdx.files.internal("map1/tree.png")));
+		astronaut = Decal.newDecal(100, 120, region, true);
+
+
 
 		controller = new FirstPersonCameraController(scene.cam);
 		controller.setVelocity(100f);
 		Gdx.input.setInputProcessor(controller);
-		Map myMap = new Map();
-		Terrain terrain = mundus.getAssetManager().getTerrainAssets().get(0).getTerrain();
-		mapDecals = myMap.loadMap(terrain);
+		client.addListener(new Listener() {
+			@Override
+			public void received(Connection connection, Object object) {
+				if (object instanceof PlayerPosition) {
+					PlayerPosition position = (PlayerPosition) object;
+					updatePlayerPosition(position);
+				}
+			}
+		});
 
+
+//		Map myMap = new Map();
+//		Terrain terrain = mundus.getAssetManager().getTerrainAssets().get(0).getTerrain();
+//		mapDecals = myMap.loadMap(terrain);
+//
 		decalBatch = new DecalBatch(new CameraGroupStrategy(scene.cam));
+	}
+
+	private void updatePlayerPosition(PlayerPosition position) {
+		boolean updated = false;
+		for (PlayerPosition pos : otherPlayerPositions) {
+			if (pos.id == position.id) {
+				pos.x = position.x;
+				pos.z = position.z;
+				updated = true;
+				break;
+			}
+		}
+		if (!updated) {
+			otherPlayerPositions.add(position);
+		}
 	}
 
 	@Override
@@ -60,21 +127,30 @@ public class MyGdxGame extends ApplicationAdapter {
 		controller.update();
 		scene.sceneGraph.update();
 		scene.render();
-		for (Decal decal : mapDecals) {
-			decalBatch.add(decal);
-			Color color = getColor(decal);
-			decal.setColor(color);
-		}
-
-		for (Decal decal : mapDecals) {
-			DecalHelper.faceCameraPerpendicularToGround(decal, scene.cam);
-		}
+		handleInput();
+//		for (Decal decal : mapDecals) {
+//			decalBatch.add(decal);
+//			Color color = getColor(decal);
+//			decal.setColor(color);
+//		}
+//
+//		for (Decal decal : mapDecals) {
+//			DecalHelper.faceCameraPerpendicularToGround(decal, scene.cam);
+//		}
 		float time = Gdx.graphics.getDeltaTime();
-
 
 
 		if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
 			isJumping = true;
+		}
+
+		for (PlayerPosition position : otherPlayerPositions) {
+			if(position.id!= myPosition.id){
+				decalBatch.add(astronaut);
+				float otherHeight = terrain.getHeightAtWorldCoord(position.x,position.z, new Matrix4());
+				astronaut.setPosition(position.x,otherHeight,position.z);
+			}
+
 		}
 
 		if(isJumping){
@@ -96,6 +172,14 @@ public class MyGdxGame extends ApplicationAdapter {
 
 
 		decalBatch.flush();
+	}
+
+	private void handleInput() {
+		// Send updated position to server
+
+		myPosition.x = scene.cam.position.x;
+		myPosition.z = scene.cam.position.z;
+		client.sendTCP(myPosition);
 	}
 
 	private Color getColor(Decal decal) {
